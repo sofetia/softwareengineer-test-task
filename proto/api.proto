@@ -1,0 +1,78 @@
+syntax = "proto3";
+
+package proto;
+
+option go_package = "./proto";
+
+service AggregateScores {
+  rpc SendAggregateScores (AggregateScoresRequest) returns (AggregateScoresReply) {}
+}
+
+service TicketScores {
+  rpc SendTicketScores (TicketScoresRequest) returns (TicketScoresReply) {}
+}
+
+service OverallScore {
+  rpc SendOverallScore (OverallScoreRequest) returns (OverallScoreReply) {}
+}
+
+service ChangeInScore {
+  rpc SendChangeInScore (ChangeInScoreRequest) returns (ChangeInScoreReply) {}
+}
+
+message AggregateScoresRequest {
+    string date_start = 1;
+    string date_end = 2;
+}
+
+message TicketScoresRequest {
+    string date_start = 1;
+    string date_end = 2;
+}
+
+message OverallScoreRequest {
+    string date_start = 1;
+    string date_end = 2;
+}
+
+message ChangeInScoreRequest {
+    string date_start = 1;
+    string date_end = 2;
+}
+
+message AggregateScoresReply {
+    repeated AggregateScoresCategory categories = 1;
+}
+
+message AggregateScoresCategory {
+    string category = 1;
+    int32 ratings = 2;
+    repeated AggregateScoresCategoriesDate dates = 3;
+    int32 score = 4;
+}
+
+message AggregateScoresCategoriesDate {
+    int32 percentage = 1;
+    string date = 2;
+}
+
+message TicketScoresReply {
+    repeated TicketScoresItem ticket = 1;
+}
+
+message TicketScoresItem {
+    int32 id = 1;
+    repeated TicketScoresCategory category = 2;
+}
+
+message TicketScoresCategory {
+    int32 percentage = 1;
+}
+
+message OverallScoreReply {
+    int32 score = 1;
+}
+
+message ChangeInScoreReply {
+    int32 change = 1;
+}
