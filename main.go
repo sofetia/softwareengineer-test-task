@@ -9,12 +9,15 @@ import (
 	"net"
 	pb "test/klaus/proto"
 
+	"github.com/fsnotify/fsnotify"
+
 	_ "github.com/mattn/go-sqlite3"
 	"google.golang.org/grpc"
 )
 
 var (
-	port = flag.Int("port", 50051, "The server port")
+	port             = flag.Int("port", 50051, "The server port")
+	databaseInMemory *sql.DB //should not be global, should be sth that can be passed to grpc server functions, but good enough for the example
 )
 
 type server struct {
@@ -31,13 +34,12 @@ type ratingCategory struct {
 	created_at string
 }
 
-func connectToSQLite() *sql.DB {
-	sqliteDatabase, err := sql.Open("sqlite3", "./database.db")
+func loadDatabase() *sql.DB {
+	db, err := sql.Open("sqlite3", "./database.db?cache=shared&mode=memory")
 	if err != nil {
 		log.Fatal(err)
 	}
-	//defer sqliteDatabase.Close() // Defer Closing the database
-	return sqliteDatabase
+	return db
 }
 
 func getWeightedScore(rating int, weight float64) float64 {
@@ -46,9 +48,7 @@ func getWeightedScore(rating int, weight float64) float64 {
 }
 
 func getData(start string, end string) []ratingCategory {
-	db := connectToSQLite()
-
-	row, err := db.Query(fmt.Sprintf(`select ratings.rating, rating_categories.name,
+	row, err := databaseInMemory.Query(fmt.Sprintf(`select ratings.rating, rating_categories.name,
 	rating_categories.weight, ratings.created_at from ratings 
 	left join rating_categories 
 	on ratings.rating_category_id = rating_categories.id
@@ -69,7 +69,6 @@ func getData(start string, end string) []ratingCategory {
 		result = append(result, rating)
 
 	}
-	db.Close()
 	return result
 }
 
@@ -91,7 +90,6 @@ func (s *server) SendAggregateScores(ctx context.Context, in *pb.AggregateScores
 		if element.name != prevName {
 			if count != 0 {
 				cat.Ratings = int32(count)
-				fmt.Println(dates)
 				cat.Dates = dates
 				dates = nil
 			}
@@ -109,8 +107,56 @@ func (s *server) SendAggregateScores(ctx context.Context, in *pb.AggregateScores
 	return &pb.AggregateScoresReply{Categories: categories}, nil
 }
 
+func (s *server) SendTicketScores(ctx context.Context, in *pb.TicketScoresRequest) (*pb.TicketScoresReply, error) {
+
+	return &pb.TicketScoresReply{}, nil
+}
+
+func (s *server) SendOverallScore(ctx context.Context, in *pb.OverallScoreRequest) (*pb.OverallScoreReply, error) {
+	return &pb.OverallScoreReply{}, nil
+}
+
+func (s *server) SendChangeInScore(ctx context.Context, in *pb.ChangeInScoreRequest) (*pb.ChangeInScoreReply, error) {
+	return &pb.ChangeInScoreReply{}, nil
+}
+
 func main() {
 	fmt.Println("Server started")
+
+	fmt.Println("Loading database to memory")
+	databaseInMemory = loadDatabase()
+
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer watcher.Close()
+
+	go func() {
+		for {
+			select {
+			case event, ok := <-watcher.Events:
+				if !ok {
+					return
+				}
+				log.Println("event:", event)
+				if event.Has(fsnotify.Write) {
+					log.Println("Database modified, reloading data to memory")
+					databaseInMemory = loadDatabase()
+				}
+			case err, ok := <-watcher.Errors:
+				if !ok {
+					return
+				}
+				log.Println("error:", err)
+			}
+		}
+	}()
+
+	err = watcher.Add("./database.db")
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	flag.Parse()
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
@@ -119,8 +165,13 @@ func main() {
 	}
 	s := grpc.NewServer()
 	pb.RegisterAggregateScoresServer(s, &server{})
+	pb.RegisterTicketScoresServer(s, &server{})
+	pb.RegisterOverallScoreServer(s, &server{})
+	pb.RegisterChangeInScoreServer(s, &server{})
 	log.Printf("server listening at %v", lis.Addr())
 	if err := s.Serve(lis); err != nil {
 		log.Fatalf("failed to serve: %v", err)
 	}
+
+	<-make(chan struct{})
 }
