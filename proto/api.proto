@@ -36,8 +36,10 @@ message OverallScoreRequest {
 }
 
 message ChangeInScoreRequest {
-    string date_start = 1;
-    string date_end = 2;
+    string from_date_start = 1;
+    string from_date_end = 2;
+    string to_date_start = 3;
+    string to_date_end = 4;
 }
 
 message AggregateScoresReply {
@@ -48,31 +50,32 @@ message AggregateScoresCategory {
     string category = 1;
     int32 ratings = 2;
     repeated AggregateScoresCategoriesDate dates = 3;
-    int32 score = 4;
+    double score = 4;
 }
 
 message AggregateScoresCategoriesDate {
-    int32 percentage = 1;
+    double percentage = 1;
     string date = 2;
 }
 
 message TicketScoresReply {
-    repeated TicketScoresItem ticket = 1;
+    repeated TicketScoresItem tickets = 1;
 }
 
 message TicketScoresItem {
     int32 id = 1;
-    repeated TicketScoresCategory category = 2;
+    repeated TicketScoresCategory categories = 2;
 }
 
 message TicketScoresCategory {
-    int32 percentage = 1;
+    string name = 1;
+    double percentage = 2;
 }
 
 message OverallScoreReply {
-    int32 score = 1;
+    double score = 1;
 }
 
 message ChangeInScoreReply {
-    int32 change = 1;
+    double change = 1;
 }

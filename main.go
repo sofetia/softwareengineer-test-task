@@ -16,7 +16,7 @@ import (
 )
 
 var (
-	port             = flag.Int("port", 50051, "The server port")
+	port             = flag.Int("port", 9999, "The server port")
 	databaseInMemory *sql.DB //should not be global, should be sth that can be passed to grpc server functions, but good enough for the example
 )
 
@@ -28,9 +28,10 @@ type server struct {
 }
 
 type ratingCategory struct {
+	ticket_id  int32
 	name       string
-	rating     int32
-	weight     float32
+	rating     int
+	weight     float64
 	created_at string
 }
 
@@ -47,12 +48,12 @@ func getWeightedScore(rating int, weight float64) float64 {
 	return score * weight
 }
 
-func getData(start string, end string) []ratingCategory {
-	row, err := databaseInMemory.Query(fmt.Sprintf(`select ratings.rating, rating_categories.name,
+func getData(start string, end string, orderBy string) []ratingCategory {
+	row, err := databaseInMemory.Query(fmt.Sprintf(`select ratings.ticket_id, ratings.rating, rating_categories.name,
 	rating_categories.weight, ratings.created_at from ratings 
 	left join rating_categories 
 	on ratings.rating_category_id = rating_categories.id
-	where ratings.created_at >= '%s' and ratings.created_at <= '%sT23:59:59' ORDER by rating_categories.name`, start, end))
+	where ratings.created_at >= '%s' and ratings.created_at <= '%sT23:59:59' ORDER by %s`, start, end, orderBy))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -62,7 +63,7 @@ func getData(start string, end string) []ratingCategory {
 
 	for row.Next() {
 		var rating ratingCategory
-		err := row.Scan(&rating.rating, &rating.name, &rating.weight, &rating.created_at)
+		err := row.Scan(&rating.ticket_id, &rating.rating, &rating.name, &rating.weight, &rating.created_at)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -73,7 +74,7 @@ func getData(start string, end string) []ratingCategory {
 }
 
 func (s *server) SendAggregateScores(ctx context.Context, in *pb.AggregateScoresRequest) (*pb.AggregateScoresReply, error) {
-	result := getData(in.GetDateStart(), in.GetDateEnd())
+	result := getData(in.GetDateStart(), in.GetDateEnd(), "rating_categories.name")
 
 	var prevName = ""
 	var count = 0
@@ -85,7 +86,7 @@ func (s *server) SendAggregateScores(ctx context.Context, in *pb.AggregateScores
 	for _, element := range result {
 		date := new(pb.AggregateScoresCategoriesDate)
 		date.Date = element.created_at
-		date.Percentage = int32(getWeightedScore(int(element.rating), float64(element.weight)))
+		date.Percentage = getWeightedScore(element.rating, element.weight)
 		dates = append(dates, date)
 		if element.name != prevName {
 			if count != 0 {
@@ -108,16 +109,89 @@ func (s *server) SendAggregateScores(ctx context.Context, in *pb.AggregateScores
 }
 
 func (s *server) SendTicketScores(ctx context.Context, in *pb.TicketScoresRequest) (*pb.TicketScoresReply, error) {
+	result := getData(in.GetDateStart(), in.GetDateEnd(), "ratings.ticket_id")
 
-	return &pb.TicketScoresReply{}, nil
+	var tickets []*pb.TicketScoresItem
+
+	for _, element := range result {
+		ticket := new(pb.TicketScoresItem)
+		ticket.Id = element.ticket_id
+		var ticketCategories []*pb.TicketScoresCategory
+		for _, ticketWithId := range result {
+			if ticketWithId.ticket_id == ticket.Id {
+				ticketCategory := new(pb.TicketScoresCategory)
+				ticketCategory.Name = ticketWithId.name
+				var scores []float64
+				for _, ticketWithCat := range result {
+					if ticketWithCat.name == ticketCategory.Name {
+						percentage := getWeightedScore(element.rating, element.weight)
+						scores = append(scores, percentage)
+					}
+				}
+				total := 0.0
+				for _, score := range scores {
+					total = total + score
+				}
+				average := total / float64(len(scores))
+				ticketCategory.Percentage = average
+				ticketCategories = append(ticketCategories, ticketCategory)
+			}
+		}
+		ticket.Categories = append(ticket.Categories, ticketCategories...)
+		tickets = append(tickets, ticket)
+	}
+
+	return &pb.TicketScoresReply{Tickets: tickets}, nil
 }
 
 func (s *server) SendOverallScore(ctx context.Context, in *pb.OverallScoreRequest) (*pb.OverallScoreReply, error) {
-	return &pb.OverallScoreReply{}, nil
+	result := getData(in.GetDateStart(), in.GetDateEnd(), "ratings.ticket_id")
+	var scores []float64
+
+	for _, element := range result {
+		percentage := getWeightedScore(element.rating, element.weight)
+		scores = append(scores, percentage)
+	}
+	total := 0.0
+	for _, score := range scores {
+		total = total + score
+	}
+	average := total / float64(len(scores))
+
+	return &pb.OverallScoreReply{Score: average}, nil
 }
 
 func (s *server) SendChangeInScore(ctx context.Context, in *pb.ChangeInScoreRequest) (*pb.ChangeInScoreReply, error) {
-	return &pb.ChangeInScoreReply{}, nil
+	firstPeriodData := getData(in.GetFromDateStart(), in.GetFromDateEnd(), "ratings.ticket_id")
+	secondPeriodData := getData(in.GetToDateStart(), in.GetToDateEnd(), "ratings.ticket_id")
+
+	var scoresFirst []float64
+
+	for _, element := range firstPeriodData {
+		percentage := getWeightedScore(element.rating, element.weight)
+		scoresFirst = append(scoresFirst, percentage)
+	}
+	totalFirst := 0.0
+	for _, score := range scoresFirst {
+		totalFirst = totalFirst + score
+	}
+	averageFirst := totalFirst / float64(len(scoresFirst))
+
+	var scoresSecond []float64
+
+	for _, element := range secondPeriodData {
+		percentage := getWeightedScore(element.rating, element.weight)
+		scoresSecond = append(scoresSecond, percentage)
+	}
+	total := 0.0
+	for _, score := range scoresFirst {
+		total = total + score
+	}
+	averageSecond := total / float64(len(scoresSecond))
+
+	difference := ((averageFirst - averageSecond) / (averageFirst + averageSecond) / 2) * 100
+
+	return &pb.ChangeInScoreReply{Change: difference}, nil
 }
 
 func main() {
