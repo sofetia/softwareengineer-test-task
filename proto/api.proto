@@ -4,6 +4,8 @@ package proto;
 
 option go_package = "./proto";
 
+import "google/protobuf/timestamp.proto";
+
 service AggregateScores {
   rpc SendAggregateScores (AggregateScoresRequest) returns (AggregateScoresReply) {}
 }
@@ -21,25 +23,25 @@ service ChangeInScore {
 }
 
 message AggregateScoresRequest {
-    string date_start = 1;
-    string date_end = 2;
+    google.protobuf.Timestamp date_start = 1;
+    google.protobuf.Timestamp date_end = 2;
 }
 
 message TicketScoresRequest {
-    string date_start = 1;
-    string date_end = 2;
+    google.protobuf.Timestamp date_start = 1;
+    google.protobuf.Timestamp date_end = 2;
 }
 
 message OverallScoreRequest {
-    string date_start = 1;
-    string date_end = 2;
+    google.protobuf.Timestamp date_start = 1;
+    google.protobuf.Timestamp date_end = 2;
 }
 
 message ChangeInScoreRequest {
-    string from_date_start = 1;
-    string from_date_end = 2;
-    string to_date_start = 3;
-    string to_date_end = 4;
+    google.protobuf.Timestamp from_date_start = 1;
+    google.protobuf.Timestamp from_date_end = 2;
+    google.protobuf.Timestamp to_date_start = 3;
+    google.protobuf.Timestamp to_date_end = 4;
 }
 
 message AggregateScoresReply {
